@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Hand Harmoniser</title>
+		<meta
+			name="description"
+			content="Sing into a mic while your hands pick the chord. Live voice harmoniser for macOS."
+		/>
+		<style>
+			:root {
+				color-scheme: dark;
+			}
+			* {
+				box-sizing: border-box;
+			}
+			body {
+				margin: 0;
+				min-height: 100vh;
+				display: grid;
+				place-items: center;
+				padding: 2rem 1.25rem;
+				font: 16px/1.5 ui-sans-serif, system-ui, sans-serif;
+				color: #f5f5f5;
+				background: #0a0a0a;
+			}
+			main {
+				max-width: 36rem;
+			}
+			h1 {
+				margin: 0 0 0.5rem;
+				font-size: 2.25rem;
+				letter-spacing: -0.04em;
+			}
+			p {
+				margin: 0 0 1rem;
+				color: #a3a3a3;
+			}
+			.row {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 0.75rem;
+				margin: 1.5rem 0 1rem;
+			}
+			a.btn {
+				display: inline-block;
+				padding: 0.7rem 1.1rem;
+				border-radius: 0.4rem;
+				background: #f5f5f5;
+				color: #0a0a0a;
+				font-weight: 600;
+				text-decoration: none;
+			}
+			a.btn.ghost {
+				background: #262626;
+				color: #f5f5f5;
+			}
+			a.btn[aria-disabled="true"] {
+				pointer-events: none;
+				opacity: 0.45;
+			}
+			small,
+			.status {
+				color: #737373;
+				font-size: 0.85rem;
+			}
+			ul {
+				margin: 1.25rem 0 0;
+				padding: 0 0 0 1.1rem;
+				color: #a3a3a3;
+			}
+		</style>
+	</head>
+	<body>
+		<main>
+			<h1>Hand Harmoniser</h1>
+			<p>
+				Sing into a mic while your hands, tracked by the webcam, pick a chord.
+				The app pitch-shifts your live voice onto the chord tones.
+			</p>
+			<div class="row" id="downloads">
+				<a class="btn" aria-disabled="true">Download for Apple Silicon</a>
+				<a class="btn ghost" aria-disabled="true">Download for Intel</a>
+			</div>
+			<p class="status" id="status">Looking up the latest macOS build…</p>
+			<small>
+				Unsigned build. First launch: right-click the app → Open. Needs camera
+				and microphone.
+			</small>
+			<ul>
+				<li>Left hand: finger count + palm/back = chord root</li>
+				<li>Right hand: finger count = quality, height = harmony volume</li>
+			</ul>
+			<p style="margin-top: 1.5rem">
+				<a
+					href="https://github.com/keihara-heidi/hand-harmoniser"
+					style="color: #a3a3a3"
+					>Source on GitHub</a
+				>
+			</p>
+		</main>
+		<script>
+			const REPO = "keihara-heidi/hand-harmoniser";
+
+			function asset(assets, re) {
+				return assets.find((a) => re.test(a.name) && a.name.endsWith(".dmg"));
+			}
+
+			async function main() {
+				const status = document.getElementById("status");
+				const [armBtn, intelBtn] = document.querySelectorAll("#downloads a");
+				try {
+					const res = await fetch(
+						`https://api.github.com/repos/${REPO}/releases/latest`,
+					);
+					if (!res.ok) throw new Error(String(res.status));
+					const rel = await res.json();
+					const assets = rel.assets || [];
+					const arm = asset(assets, /aarch64|arm64/i);
+					const intel = asset(assets, /x64|x86_64/i);
+					if (arm) {
+						armBtn.href = arm.browser_download_url;
+						armBtn.removeAttribute("aria-disabled");
+					}
+					if (intel) {
+						intelBtn.href = intel.browser_download_url;
+						intelBtn.removeAttribute("aria-disabled");
+					}
+					status.textContent = arm || intel ? rel.tag_name : "No .dmg in the latest release yet.";
+				} catch {
+					status.innerHTML =
+						'No release yet. Watch <a href="https://github.com/keihara-heidi/hand-harmoniser/actions" style="color:#d4d4d4">Actions</a> for the first macOS build.';
+				}
+			}
+
+			main();
+		</script>
+	</body>
+</html>

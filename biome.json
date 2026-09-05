@@ -1,0 +1,25 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.5.12/schema.json",
+	"formatter": {
+		"indentStyle": "tab"
+	},
+	"linter": {
+		"rules": {
+			"recommended": true,
+			"style": {
+				"noExcessiveLinesPerFile": {
+					"level": "error",
+					"options": {
+						"maxLines": 200
+					}
+				}
+			},
+			"correctness": {
+				"useExhaustiveDependencies": "error"
+			}
+		}
+	},
+	"files": {
+		"includes": ["src/**", "scripts/**", "*.ts", "*.json"]
+	}
+}

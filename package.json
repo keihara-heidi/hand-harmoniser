@@ -1,0 +1,36 @@
+{
+	"name": "hand-harmoniser",
+	"private": true,
+	"version": "0.1.0",
+	"type": "module",
+	"scripts": {
+		"dev": "vite",
+		"build": "tsc && vite build",
+		"preview": "vite preview",
+		"tauri": "tauri",
+		"assets": "bun scripts/fetch-assets.ts",
+		"postinstall": "bun scripts/fetch-assets.ts",
+		"lint": "biome check . && cd src-tauri && cargo clippy --all-targets -- -D warnings",
+		"lint:fix": "biome check --write .",
+		"test": "bun test && cd src-tauri && cargo test"
+	},
+	"dependencies": {
+		"@mediapipe/tasks-vision": "1.0.1",
+		"@tailwindcss/vite": "^4.3.3",
+		"@tauri-apps/api": "2",
+		"@vitejs/plugin-react": "^6.1.1",
+		"jotai": "^2.20.3",
+		"react": "19",
+		"react-dom": "19",
+		"tailwindcss": "^4.3.3",
+		"vite": "^8.2.2"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2",
+		"@tauri-apps/cli": "2",
+		"@types/bun": "^1.4.1",
+		"@types/react": "^19.2.18",
+		"@types/react-dom": "^19.2.7",
+		"typescript": "^7.0.2"
+	}
+}
