@@ -2,7 +2,15 @@
 
 Sing into a mic while your hands, tracked by the webcam, pick a chord. The app pitch-shifts your live voice onto the chord tones and mixes those harmony voices with the dry signal.
 
-**[Download for macOS](https://keihara-heidi.github.io/hand-harmoniser/)** — Apple Silicon and Intel. Unsigned: right-click the app → Open the first time.
+**[Download for macOS](https://keihara-heidi.github.io/hand-harmoniser/)** — Apple Silicon and Intel.
+
+macOS will say the unsigned app is “damaged”. Drag it to Applications, then:
+
+```sh
+xattr -cr "/Applications/Hand Harmoniser.app"
+```
+
+Then open it. Needs camera and microphone.
 
 ## Run
 

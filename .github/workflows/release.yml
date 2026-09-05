@@ -45,7 +45,8 @@ jobs:
           tagName: v__VERSION__
           releaseName: Hand Harmoniser v__VERSION__
           releaseBody: |
-            macOS app. Unsigned — right-click the .app and choose Open the first time.
+            macOS will say the unsigned app is “damaged”. Drag it to Applications, then:
+            `xattr -cr "/Applications/Hand Harmoniser.app"`
             Download from https://keihara-heidi.github.io/hand-harmoniser/
           releaseDraft: false
           prerelease: false
