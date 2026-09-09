@@ -73,10 +73,7 @@ impl AudioEngine {
 		let shared = Arc::new(Shared {
 			ctrl_tx: Mutex::new(prod),
 			mix: Mutex::new(MixSettings::default()),
-			last_harmony: Mutex::new(ControlMsg::Harmony {
-				pcs: 0,
-				gain: 0.0,
-			}),
+			last_harmony: Mutex::new(ControlMsg::Harmony { pcs: 0, gain: 0.0 }),
 			meter: meter.clone(),
 			running: running.clone(),
 		});
@@ -206,7 +203,8 @@ fn start_streams(
 	let output = resolve(&host, output_id, false)?;
 	let out_cfg = output.default_output_config().map_err(|e| e.to_string())?;
 	let in_default = input.default_input_config().map_err(|e| e.to_string())?;
-	let sr = out_cfg.sample_rate();
+	let in_sr = in_default.sample_rate();
+	let out_sr = out_cfg.sample_rate();
 	let out_ch = out_cfg.channels();
 	let in_ch = in_default.channels();
 	match open_pair(
@@ -214,7 +212,8 @@ fn start_streams(
 		ctrl_rx,
 		&input,
 		&output,
-		sr,
+		in_sr,
+		out_sr,
 		in_ch,
 		out_ch,
 		BufferSize::Fixed(256),
@@ -228,7 +227,8 @@ fn start_streams(
 				cons,
 				&input,
 				&output,
-				sr,
+				in_sr,
+				out_sr,
 				in_ch,
 				out_ch,
 				BufferSize::Default,
@@ -237,58 +237,90 @@ fn start_streams(
 	}
 }
 
+/// Linear-interpolation resampler step: emits output samples between `prev`
+/// and `s` spaced `step` input-samples apart, returns `s` as the new `prev`.
+/// ponytail: linear is fine for voice; swap for sinc if harmonies sound rough.
+fn resample_step(
+	tx: &mut rtrb::Producer<f32>,
+	prev: f32,
+	phase: &mut f64,
+	step: f64,
+	s: f32,
+) -> f32 {
+	while *phase < 1.0 {
+		let _ = tx.push(prev + (s - prev) * *phase as f32);
+		*phase += step;
+	}
+	*phase -= 1.0;
+	s
+}
+
 #[allow(clippy::too_many_arguments)]
 fn open_pair(
 	shared: &Shared,
 	mut ctrl_rx: rtrb::Consumer<ControlMsg>,
 	input: &cpal::Device,
 	output: &cpal::Device,
-	sr: u32,
+	in_sr: u32,
+	out_sr: u32,
 	in_ch: u16,
 	out_ch: u16,
 	buffer_size: BufferSize,
 ) -> Result<(Running, AudioStatus), String> {
 	let mix = *shared.mix.lock().expect("mix");
 	let last = *shared.last_harmony.lock().expect("harmony");
-	let mut harm = Harmonizer::new(sr as f32, mix, shared.meter.clone());
+	let mut harm = Harmonizer::new(out_sr as f32, mix, shared.meter.clone());
 	harm.apply(last);
 	let latency = harm.latency_ms();
-	let ring_cap = (sr as usize / 2).max(2048);
+	let ring_cap = (out_sr as usize / 2).max(2048);
 	let (mut audio_tx, mut audio_rx) = rtrb::RingBuffer::<f32>::new(ring_cap);
 	let in_ch_us = in_ch as usize;
 	let out_ch_us = out_ch as usize;
 	let cfg_in = StreamConfig {
 		channels: in_ch,
-		sample_rate: sr,
+		sample_rate: in_sr,
 		buffer_size,
 	};
 	let cfg_out = StreamConfig {
 		channels: out_ch,
-		sample_rate: sr,
+		sample_rate: out_sr,
 		buffer_size,
 	};
+	// BT mics (AirPods hands-free) run 8–24 kHz while the output device stays
+	// at its own rate; resample the mono input to the output rate instead of
+	// demanding a match.
+	let step = if in_sr == out_sr {
+		0.0
+	} else {
+		in_sr as f64 / out_sr as f64
+	};
+	let mut prev = 0.0f32;
+	let mut phase = 0.0f64;
 	let in_stream = input
 		.build_input_stream::<f32, _, _>(
 			cfg_in,
 			move |data: &[f32], _| {
-				if in_ch_us <= 1 {
-					let _ = audio_tx.push_partial_slice(data);
-				} else {
-					for frame in data.chunks(in_ch_us) {
-						if let Some(&s) = frame.first() {
-							let _ = audio_tx.push(s);
+				if step == 0.0 {
+					if in_ch_us <= 1 {
+						let _ = audio_tx.push_partial_slice(data);
+					} else {
+						for frame in data.chunks(in_ch_us) {
+							if let Some(&s) = frame.first() {
+								let _ = audio_tx.push(s);
+							}
 						}
 					}
+					return;
+				}
+				for frame in data.chunks(in_ch_us) {
+					let s = frame.first().copied().unwrap_or(0.0);
+					prev = resample_step(&mut audio_tx, prev, &mut phase, step, s);
 				}
 			},
 			|e| eprintln!("input stream error: {e}"),
 			None,
 		)
-		.map_err(|e| {
-			format!(
-				"Input device does not support {sr} Hz; set both devices to the same rate ({e})"
-			)
-		})?;
+		.map_err(|e| format!("Cannot open input device ({e})"))?;
 	let mut mono = vec![0.0f32; MAX_BLOCK];
 	let out_stream = output
 		.build_output_stream::<f32, _, _>(
@@ -310,11 +342,7 @@ fn open_pair(
 			|e| eprintln!("output stream error: {e}"),
 			None,
 		)
-		.map_err(|e| {
-			format!(
-				"Output device does not support {sr} Hz; set both devices to the same rate ({e})"
-			)
-		})?;
+		.map_err(|e| format!("Cannot open output device ({e})"))?;
 	in_stream.play().map_err(|e| e.to_string())?;
 	out_stream.play().map_err(|e| e.to_string())?;
 	let input_name = input
@@ -333,11 +361,49 @@ fn open_pair(
 		},
 		AudioStatus {
 			running: true,
-			sample_rate: sr,
+			sample_rate: out_sr,
 			buffer_frames,
 			input_name,
 			output_name,
 			harmony_latency_ms: latency,
 		},
 	))
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn resample_up_pushes_one_per_ratio_step() {
+		let (mut tx, mut rx) = rtrb::RingBuffer::<f32>::new(64);
+		let step = 0.25; // 12 kHz → 48 kHz
+		let mut phase = 0.0;
+		let prev = resample_step(&mut tx, 0.0, &mut phase, step, 0.0);
+		assert_eq!(rx.slots(), 4);
+		let _ = resample_step(&mut tx, prev, &mut phase, step, 4.0);
+		assert_eq!(rx.slots(), 8);
+		let mut out = Vec::new();
+		while let Ok(s) = rx.pop() {
+			out.push(s);
+		}
+		assert_eq!(out, vec![0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0]);
+	}
+
+	#[test]
+	fn resample_down_halves_the_rate() {
+		let (mut tx, mut rx) = rtrb::RingBuffer::<f32>::new(64);
+		let step = 2.0; // 48 kHz → 24 kHz
+		let mut phase = 0.0;
+		let mut prev = 0.0;
+		for i in 1..=6 {
+			prev = resample_step(&mut tx, prev, &mut phase, step, i as f32);
+		}
+		assert_eq!(rx.slots(), 3);
+		let mut out = Vec::new();
+		while let Ok(s) = rx.pop() {
+			out.push(s);
+		}
+		assert_eq!(out, vec![0.0, 2.0, 4.0]);
+	}
 }
