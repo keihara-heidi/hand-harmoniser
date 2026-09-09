@@ -137,14 +137,24 @@
 						intelBtn.href = intel.browser_download_url;
 						intelBtn.removeAttribute("aria-disabled");
 					}
-					status.textContent = arm || intel ? rel.tag_name : "No .dmg in the latest release yet.";
+					status.textContent = arm || intel
+						? `Latest build: ${rel.tag_name}`
+						: "No .dmg in the latest release yet.";
 				} catch {
+					// API rate-limited or no release yet: the release page
+					// always redirects to the newest one.
+					const page = `https://github.com/${REPO}/releases/latest`;
+					for (const btn of [armBtn, intelBtn]) {
+						btn.href = page;
+						btn.removeAttribute("aria-disabled");
+					}
 					status.innerHTML =
-						'No release yet. Watch <a href="https://github.com/keihara-heidi/hand-harmoniser/actions" style="color:#d4d4d4">Actions</a> for the first macOS build.';
+						'Couldn’t reach GitHub for direct links — the buttons open the <a href="' +
+						page +
+						'" style="color:#d4d4d4">latest release</a>.';
 				}
 			}
 
 			main();
 		</script>
-	</body>
 </html>
